@@ -15,7 +15,7 @@ This package gives you:
 ### 1) Install packages
 
 ```sh
-npm i @mux/convex @mux/mux-node
+npm i @mux/convex @mux/ts
 npm i -D @mux/convex-mux-init
 ```
 

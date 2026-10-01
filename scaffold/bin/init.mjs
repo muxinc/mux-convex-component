@@ -23,7 +23,7 @@ Options:
 function migrationsTemplate(name) {
   return `"use node";
 
-import Mux from "@mux/mux-node";
+import Mux from "@mux/ts";
 import { action } from "./_generated/server";
 import { components } from "./_generated/api";
 import { v } from "convex/values";
@@ -153,7 +153,7 @@ export default app;
 function webhookTemplate(name) {
   return `"use node";
 
-import Mux from "@mux/mux-node";
+import Mux from "@mux/ts";
 import { internalAction } from "./_generated/server";
 import { components } from "./_generated/api";
 import { v } from "convex/values";
@@ -237,10 +237,10 @@ export const ingestMuxWebhook = internalAction({
         process.env.MUX_WEBHOOK_SECRET
       ),
     });
-    const event = mux.webhooks.unwrap(
+    const event = (await mux.webhooks.unwrap(
       args.rawBody,
       normalizeHeaders(args.headers)
-    ) as unknown as Record<string, unknown>;
+    )) as unknown as Record<string, unknown>;
 
     await ctx.runMutation(components.${name}.sync.recordWebhookEventPublic, {
       event,
@@ -481,7 +481,7 @@ export function runInit(args) {
 
   const nextSteps = [];
   nextSteps.push(`Install Mux SDK in your app
-   npm i @mux/mux-node`);
+   npm i @mux/ts`);
   if (skipConfig) {
     nextSteps.push(`Ensure convex/convex.config.ts mounts @mux/convex`);
   }

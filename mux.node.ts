@@ -1,6 +1,6 @@
 "use node";
 
-import Mux from "@mux/mux-node";
+import Mux from "@mux/ts";
 import { v } from "convex/values";
 import { api, internal } from "./_generated/api";
 import { action } from "./_generated/server";
@@ -275,7 +275,7 @@ export const ingestWebhook = action({
       const mux = createMuxClient({
         webhookSecret: args.webhookSecret,
       });
-      const unwrapped = mux.webhooks.unwrap(args.rawBody, normalizedHeaders);
+      const unwrapped = await mux.webhooks.unwrap(args.rawBody, normalizedHeaders);
       event = parseWebhookEvent(unwrapped);
     } else {
       event = parseWebhookEvent(JSON.parse(args.rawBody));
