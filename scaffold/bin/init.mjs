@@ -237,10 +237,12 @@ export const ingestMuxWebhook = internalAction({
         process.env.MUX_WEBHOOK_SECRET
       ),
     });
-    const event = (await mux.webhooks.unwrap(
+    // Typed so a missing await fails the typecheck.
+    const unwrapped: Mux.Webhooks.UnwrapWebhookEvent = await mux.webhooks.unwrap(
       args.rawBody,
       normalizeHeaders(args.headers)
-    )) as unknown as Record<string, unknown>;
+    );
+    const event = unwrapped as unknown as Record<string, unknown>;
 
     await ctx.runMutation(components.${name}.sync.recordWebhookEventPublic, {
       event,

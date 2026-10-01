@@ -275,7 +275,11 @@ export const ingestWebhook = action({
       const mux = createMuxClient({
         webhookSecret: args.webhookSecret,
       });
-      const unwrapped = await mux.webhooks.unwrap(args.rawBody, normalizedHeaders);
+      // Typed so a missing await fails the typecheck.
+      const unwrapped: Mux.Webhooks.UnwrapWebhookEvent = await mux.webhooks.unwrap(
+        args.rawBody,
+        normalizedHeaders
+      );
       event = parseWebhookEvent(unwrapped);
     } else {
       event = parseWebhookEvent(JSON.parse(args.rawBody));
