@@ -1,6 +1,6 @@
 {
   "name": "@mux/convex",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Convex Component for syncing Mux video data and app metadata.",
   "type": "module",
   "workspaces": [
