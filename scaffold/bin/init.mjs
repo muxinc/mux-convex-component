@@ -237,12 +237,34 @@ export const ingestMuxWebhook = internalAction({
         process.env.MUX_WEBHOOK_SECRET
       ),
     });
-    // Typed so a missing await fails the typecheck.
-    const unwrapped: Mux.Webhooks.UnwrapWebhookEvent = await mux.webhooks.unwrap(
-      args.rawBody,
-      normalizeHeaders(args.headers)
-    );
-    const event = unwrapped as unknown as Record<string, unknown>;
+    // Return expected client errors across the action boundary; let server
+    // failures throw so Convex returns 500 and Mux can retry.
+    let unwrapped: Mux.Webhooks.UnwrapWebhookEvent;
+    try {
+      // Typed so a missing await fails the typecheck.
+      unwrapped = await mux.webhooks.unwrap(
+        args.rawBody,
+        normalizeHeaders(args.headers)
+      );
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        return { error: "invalid_payload" as const };
+      }
+      // The SDK currently throws plain Errors for signature failures. Match
+      // only its known validation errors, not unexpected SDK/crypto failures.
+      if (error instanceof Error && [
+        "Could not find a mux-signature header",
+        "Unable to extract timestamp and signatures from header",
+        "No v1 signatures found",
+        "No signatures found matching the expected signature for payload.",
+        "Webhook timestamp is too old",
+      ].includes(error.message)) {
+        return { error: "invalid_signature" as const };
+      }
+      throw error;
+    }
+    const event = asRecord(unwrapped);
+    if (!event) return { error: "invalid_payload" as const };
 
     await ctx.runMutation(components.${name}.sync.recordWebhookEventPublic, {
       event,
@@ -338,7 +360,11 @@ export function registerMuxHttpRoutes(http: ReturnType<typeof httpRouter>) {
         headers,
       });
 
+      const status = "error" in result
+        ? result.error === "invalid_signature" ? 401 : 400
+        : 200;
       return new Response(JSON.stringify(result), {
+        status,
         headers: { "content-type": "application/json" },
       });
     }),

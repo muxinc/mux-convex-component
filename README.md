@@ -92,6 +92,11 @@ Copy the webhook signing secret and set it in Convex:
 npx convex env set MUX_WEBHOOK_SECRET <your_mux_webhook_secret>
 ```
 
+The generated webhook route returns **401** for invalid signatures, **400** for
+signed malformed payloads, and **500** for server failures. See
+[webhook HTTP responses](scaffold/README.md#webhook-http-responses) for details and
+how to update existing wrappers.
+
 ### 7) Verify data in Convex dashboard
 
 Tables to check:
@@ -143,6 +148,30 @@ npx convex run migrations:backfillMux '{"maxAssets":500,"defaultUserId":"dev-use
 # run against prod deployment
 npx convex run --prod migrations:backfillMux '{"maxAssets":500}'
 ```
+
+## Development
+
+From a fresh checkout:
+
+```sh
+npm ci
+npm run typecheck
+npm test
+```
+
+These checks do not require a Convex deployment or Mux credentials. Webhook tests
+use the real Mux SDK with locally signed payloads and mocked database calls.
+
+The component's `_generated/api.ts`, `_generated/dataModel.ts`, and
+`_generated/server.ts` are checked into Git and included in the published package.
+Keep them in source control so typechecking and packaging work on a fresh
+checkout. The data model derives its types directly from `schema.ts`, so schema
+changes are reflected immediately. If Convex codegen updates these utilities
+while developing with an app that mounts the component, include those changes
+in your commit. Do not run `convex codegen` as a typecheck prerequisite: the
+standalone component has no deployment configuration.
+
+CI runs typechecking and webhook tests on pull requests and pushes to `main`.
 
 ## Troubleshooting
 

@@ -1,5 +1,11 @@
 node_modules
-_generated
+_generated/
+# Ship the component's generated TypeScript utilities with the source.
+!/_generated/
+/_generated/*
+!/_generated/api.ts
+!/_generated/dataModel.ts
+!/_generated/server.ts
 .env.local
 .env
 
