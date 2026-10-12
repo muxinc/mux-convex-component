@@ -20,7 +20,7 @@ This CLI creates those app files for you:
 Install the runtime packages in your app:
 
 ```sh
-npm i @mux/convex @mux/mux-node
+npm i @mux/convex @mux/ts
 ```
 
 Then run the scaffold CLI with `npx`, or install it as a dev dependency if you
@@ -54,7 +54,7 @@ Existing `convex/http.ts` is never overwritten, even with `--force`.
 1. Install Mux SDK in your app:
 
 ```sh
-npm i @mux/mux-node
+npm i @mux/ts
 ```
 
 2. If your app already had `convex/http.ts`, add the generated helper:
