@@ -80,6 +80,27 @@ npx convex dev
 npx convex run migrations:backfillMux '{}'
 ```
 
+### Webhook HTTP responses
+
+The generated `POST /mux/webhook` route returns:
+
+- **200** for verified events (including unsupported events that are skipped).
+- **401** with `{"error":"invalid_signature"}` for missing, invalid, or expired signatures.
+- **400** with `{"error":"invalid_payload"}` for signed invalid JSON or non-object payloads.
+- **500** for configuration, database, or unexpected SDK failures.
+
+Signature and payload validation failures do not write to the database. Error
+responses for these failures do not expose SDK error details or secrets.
+
+To update existing wrappers, review any local customizations first, then run:
+
+```sh
+npx @mux/convex-mux-init@latest --force --skip-config --skip-migration
+```
+
+This updates both `convex/muxWebhook.ts` and `convex/muxHttp.ts`; the existing
+`convex/http.ts` router is preserved.
+
 ### Video Metadata From Upload Flow
 
 Generated webhook/backfill code can auto-upsert `videoMetadata` from Mux asset
