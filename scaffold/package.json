@@ -1,6 +1,6 @@
 {
   "name": "@mux/convex-mux-init",
-  "version": "0.2.1",
+  "version": "0.2.3",
   "description": "Scaffold app-level Convex wrappers for @mux/convex.",
   "type": "module",
   "bin": {
