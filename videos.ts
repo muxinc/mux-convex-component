@@ -1,5 +1,6 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import { assetDoc, videoMetadataDoc } from "./schema";
 
 const DEFAULT_METADATA_USER_ID = "default";
 
@@ -21,6 +22,7 @@ export const upsertVideoMetadata = mutation({
     ),
     custom: v.optional(v.record(v.string(), v.any())),
   },
+  returns: v.id("videoMetadata"),
   handler: async (ctx, args) => {
     const now = Date.now();
     const isFallbackUser = args.userId === DEFAULT_METADATA_USER_ID;
@@ -59,13 +61,13 @@ export const upsertVideoMetadata = mutation({
             custom: args.custom ?? existing.custom ?? fallback.custom,
             updatedAtMs: now,
           });
-          await ctx.db.patch(existing._id, mergedPatchDoc);
-          await ctx.db.delete(fallback._id);
+          await ctx.db.patch("videoMetadata", existing._id, mergedPatchDoc);
+          await ctx.db.delete("videoMetadata", fallback._id);
           return existing._id;
         }
       }
 
-      await ctx.db.patch(existing._id, patchDoc);
+      await ctx.db.patch("videoMetadata", existing._id, patchDoc);
       return existing._id;
     }
 
@@ -87,7 +89,7 @@ export const upsertVideoMetadata = mutation({
           custom: args.custom ?? fallback.custom,
           updatedAtMs: now,
         });
-        await ctx.db.patch(fallback._id, migratedPatchDoc);
+        await ctx.db.patch("videoMetadata", fallback._id, migratedPatchDoc);
         return fallback._id;
       }
     }
@@ -107,6 +109,14 @@ export const getVideoByMuxAssetId = query({
     muxAssetId: v.string(),
     userId: v.optional(v.string()),
   },
+  // `metadata` is the user's row when `userId` is given, otherwise every row.
+  returns: v.union(
+    v.null(),
+    v.object({
+      asset: assetDoc,
+      metadata: v.union(videoMetadataDoc, v.null(), v.array(videoMetadataDoc)),
+    })
+  ),
   handler: async (ctx, args) => {
     const asset = await ctx.db
       .query("assets")
@@ -139,6 +149,12 @@ export const listVideosForUser = query({
     userId: v.string(),
     limit: v.optional(v.number()),
   },
+  returns: v.array(
+    v.object({
+      metadata: videoMetadataDoc,
+      asset: v.union(assetDoc, v.null()),
+    })
+  ),
   handler: async (ctx, args) => {
     const metadataRows = await ctx.db
       .query("videoMetadata")

@@ -4,8 +4,11 @@ _generated/
 !/_generated/
 /_generated/*
 !/_generated/api.ts
+!/_generated/component.ts
 !/_generated/dataModel.ts
 !/_generated/server.ts
+# Scratch app used by `npm run codegen`.
+.codegen/
 .env.local
 .env
 

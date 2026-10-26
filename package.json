@@ -20,6 +20,7 @@
     "videos.ts",
     "catalog.ts",
     "_generated/api.ts",
+    "_generated/component.ts",
     "_generated/server.ts",
     "_generated/dataModel.ts"
   ],
@@ -36,23 +37,28 @@
     "./catalog.js": "./catalog.ts",
     "./_generated/api": "./_generated/api.ts",
     "./_generated/api.js": "./_generated/api.ts",
+    "./_generated/component": "./_generated/component.ts",
+    "./_generated/component.js": "./_generated/component.ts",
     "./_generated/server": "./_generated/server.ts",
     "./_generated/server.js": "./_generated/server.ts",
     "./_generated/dataModel": "./_generated/dataModel.ts",
     "./_generated/dataModel.js": "./_generated/dataModel.ts"
   },
   "scripts": {
+    "codegen": "node scripts/codegen.mjs",
     "test": "node --test tests/*.test.mjs",
     "typecheck": "tsc --noEmit"
   },
   "publishConfig": {
     "access": "public"
   },
-  "dependencies": {
+  "peerDependencies": {
     "@mux/ts": "^15.0.0",
-    "convex": "^1.20.0"
+    "convex": "^1.31.2"
   },
   "devDependencies": {
+    "@mux/ts": "^15.6.1",
+    "convex": "^1.48.0",
     "typescript": "^5.7.0"
   }
 }

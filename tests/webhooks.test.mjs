@@ -14,12 +14,18 @@ const root = fileURLToPath(new URL("../", import.meta.url));
 const require = createRequire(import.meta.url);
 const secret = "local-webhook-regression-test-secret";
 const project = mkdtempSync(join(tmpdir(), "mux-webhooks-"));
-const originalSecret = process.env.MUX_WEBHOOK_SECRET;
+const envKeys = ["MUX_WEBHOOK_SECRET", "MUX_TOKEN_ID", "MUX_TOKEN_SECRET"];
+const originalEnv = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
 process.env.MUX_WEBHOOK_SECRET = secret;
+// API credentials are opted into per test.
+delete process.env.MUX_TOKEN_ID;
+delete process.env.MUX_TOKEN_SECRET;
 after(() => {
   rmSync(project, { recursive: true, force: true });
-  if (originalSecret === undefined) delete process.env.MUX_WEBHOOK_SECRET;
-  else process.env.MUX_WEBHOOK_SECRET = originalSecret;
+  for (const [key, value] of Object.entries(originalEnv)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
 });
 mkdirSync(join(project, "convex"));
 execFileSync(process.execPath, [join(root, "scaffold/bin/convex-mux-init.mjs")], {
@@ -76,9 +82,70 @@ function event(type = "video.asset.ready") {
   };
 }
 
+function childEvent(type, data) {
+  return { id: `event-${type}`, type, created_at: new Date().toISOString(), data };
+}
+
 const implementations = [
-  { name: "component", handler: loadHandler(join(root, "mux.node.ts"), "ingestWebhook"), suffix: "" },
-  { name: "generated scaffold", handler: loadHandler(join(project, "convex/muxWebhook.ts"), "ingestMuxWebhook"), suffix: "Public" },
+  {
+    name: "component",
+    file: join(root, "mux.node.ts"),
+    exportName: "ingestWebhook",
+    suffix: "",
+    credentials: { args: { muxTokenId: "token-id", muxTokenSecret: "token-secret" }, env: {} },
+  },
+  {
+    name: "generated scaffold",
+    file: join(project, "convex/muxWebhook.ts"),
+    exportName: "ingestMuxWebhook",
+    suffix: "Public",
+    credentials: { args: {}, env: { MUX_TOKEN_ID: "token-id", MUX_TOKEN_SECRET: "token-secret" } },
+  },
+].map((implementation) => ({
+  ...implementation,
+  handler: loadHandler(implementation.file, implementation.exportName),
+}));
+
+// The real SDK (so signatures are still verified) with API retrieval stubbed.
+const RealMux = require("@mux/ts").default;
+const parents = {
+  "asset-parent": { id: "asset-parent", status: "ready", tracks: [{ id: "track-test", type: "text", status: "ready" }] },
+  "stream-parent": { id: "stream-parent", status: "idle" },
+};
+class StubbedMux extends RealMux {
+  constructor(options) {
+    super(options);
+    const retrieve = async (id) => {
+      if (!(id in parents)) throw new RealMux.NotFoundError(404, {}, "Not Found", new Headers());
+      return parents[id];
+    };
+    this.video = { assets: { retrieve }, liveStreams: { retrieve } };
+  }
+}
+
+async function invokeWithCredentials(implementation, payload) {
+  const handler = loadModule(implementation.file, { "@mux/ts": StubbedMux })[implementation.exportName]._handler;
+  const { args, env } = implementation.credentials;
+  Object.assign(process.env, env);
+  try {
+    const body = JSON.stringify(payload);
+    const { calls, promise } = invoke({ ...implementation, handler }, body, signedHeaders(body), args);
+    return { calls, result: await promise };
+  } finally {
+    for (const key of Object.keys(env)) delete process.env[key];
+  }
+}
+
+const track = { id: "track-test", asset_id: "asset-parent", type: "text", status: "ready" };
+const rendition = { id: "rendition-test", asset_id: "asset-parent", name: "highest.mp4", status: "ready" };
+const simulcastTarget = { id: "target-test", live_stream_id: "stream-parent", status: "idle", url: "rtmps://example.test/live" };
+const childEvents = [
+  ["video.asset.track.ready", track, "upsertAssetFromPayload", "asset", "asset-parent"],
+  ["video.asset.track.deleted", { ...track, status: "deleted" }, "upsertAssetFromPayload", "asset", "asset-parent"],
+  ["video.asset.static_rendition.ready", rendition, "upsertAssetFromPayload", "asset", "asset-parent"],
+  ["video.asset.static_rendition.deleted", rendition, "upsertAssetFromPayload", "asset", "asset-parent"],
+  ["video.live_stream.simulcast_target.idle", simulcastTarget, "upsertLiveStreamFromPayload", "liveStream", "stream-parent"],
+  ["video.live_stream.simulcast_target.deleted", simulcastTarget, "upsertLiveStreamFromPayload", "liveStream", "stream-parent"],
 ];
 
 function invoke(implementation, body, headers = signedHeaders(body), extra = {}, alreadyProcessed = false) {
@@ -136,6 +203,47 @@ for (const implementation of implementations) {
       });
     });
   }
+
+  // Their data is the asset, so they must not be treated as asset deletion.
+  for (const type of ["video.asset.master.deleted", "video.asset.static_renditions.deleted"]) {
+    test(`${name}: ${type} updates the asset instead of deleting it`, async () => {
+      const payload = event(type);
+      const { calls, promise } = invoke(implementation, JSON.stringify(payload));
+      assert.equal((await promise).skipped, false);
+      assert.deepEqual(calls.map((call) => call.name), [
+        `sync:recordWebhookEvent${suffix}`,
+        `sync:upsertAssetFromPayload${suffix}`,
+        "videos:upsertVideoMetadata",
+      ]);
+      assert.deepEqual(calls[1].args, { asset: payload.data });
+    });
+  }
+
+  for (const [type, data, mutation, argument, parentId] of childEvents) {
+    test(`${name}: ${type} without API credentials only records the event`, async () => {
+      const payload = childEvent(type, data);
+      const { calls, promise } = invoke(implementation, JSON.stringify(payload));
+      assert.equal((await promise).skipped, true);
+      assert.deepEqual(calls.map((call) => call.name), [`sync:recordWebhookEvent${suffix}`]);
+    });
+
+    test(`${name}: ${type} with API credentials re-syncs the parent`, async () => {
+      const { calls, result } = await invokeWithCredentials(implementation, childEvent(type, data));
+      assert.equal(result.skipped, false);
+      assert.deepEqual(calls.map((call) => call.name), [
+        `sync:recordWebhookEvent${suffix}`,
+        `sync:${mutation}${suffix}`,
+      ]);
+      assert.deepEqual(calls[1].args, { [argument]: parents[parentId] });
+    });
+  }
+
+  test(`${name}: child event for a deleted parent is skipped`, async () => {
+    const payload = childEvent("video.asset.track.ready", { ...track, asset_id: "asset-gone" });
+    const { calls, result } = await invokeWithCredentials(implementation, payload);
+    assert.equal(result.skipped, true);
+    assert.deepEqual(calls.map((call) => call.name), [`sync:recordWebhookEvent${suffix}`]);
+  });
 
   const body = JSON.stringify(event());
   for (const [label, rawBody, headers, error] of [

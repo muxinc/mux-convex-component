@@ -225,6 +225,37 @@ function normalizeHeaders(headers: Record<string, string>): Record<string, strin
   return normalized;
 }
 
+// These events carry a track, static rendition, shot list, or simulcast target
+// in \`data\`, not the parent asset or live stream.
+function isAssetChildEvent(eventType: string): boolean {
+  return (
+    eventType.startsWith("video.asset.track.") ||
+    eventType.startsWith("video.asset.static_rendition.") ||
+    eventType.startsWith("video.asset.shots.")
+  );
+}
+
+function isLiveStreamChildEvent(eventType: string): boolean {
+  return eventType.startsWith("video.live_stream.simulcast_target.");
+}
+
+// Optional here: without API credentials, child events are recorded but skipped.
+function muxApiClient(): Mux | undefined {
+  const tokenId = process.env.MUX_TOKEN_ID;
+  const tokenSecret = process.env.MUX_TOKEN_SECRET;
+  return tokenId && tokenSecret ? new Mux({ tokenId, tokenSecret }) : undefined;
+}
+
+// Returns undefined when the object was deleted before the event was handled.
+async function retrieveIfExists<T>(retrieve: () => Promise<T>): Promise<T | undefined> {
+  try {
+    return await retrieve();
+  } catch (error) {
+    if (error instanceof Mux.NotFoundError) return undefined;
+    throw error;
+  }
+}
+
 export const ingestMuxWebhook = internalAction({
   args: {
     rawBody: v.string(),
@@ -279,8 +310,38 @@ export const ingestMuxWebhook = internalAction({
       return { skipped: true, reason: "missing_data" };
     }
 
+    if (isAssetChildEvent(eventType)) {
+      // Re-sync the parent so its tracks and renditions stay current.
+      const muxAssetId = asString(data.asset_id);
+      const mux = muxApiClient();
+      if (!muxAssetId || !mux) return { skipped: true, reason: "child_event" };
+      const asset = await retrieveIfExists(() => mux.video.assets.retrieve(muxAssetId));
+      if (!asset) return { skipped: true, reason: "parent_not_found" };
+      await ctx.runMutation(components.${name}.sync.upsertAssetFromPayloadPublic, {
+        asset: asset as unknown as Record<string, unknown>,
+      });
+      return { skipped: false };
+    }
+
+    if (isLiveStreamChildEvent(eventType)) {
+      const muxLiveStreamId = asString(data.live_stream_id);
+      const mux = muxApiClient();
+      if (!muxLiveStreamId || !mux) return { skipped: true, reason: "child_event" };
+      const liveStream = await retrieveIfExists(() =>
+        mux.video.liveStreams.retrieve(muxLiveStreamId)
+      );
+      if (!liveStream) return { skipped: true, reason: "parent_not_found" };
+      await ctx.runMutation(
+        components.${name}.sync.upsertLiveStreamFromPayloadPublic,
+        {
+          liveStream: liveStream as unknown as Record<string, unknown>,
+        }
+      );
+      return { skipped: false };
+    }
+
     if (eventType.startsWith("video.asset.")) {
-      if (eventType.endsWith(".deleted")) {
+      if (eventType === "video.asset.deleted") {
         await ctx.runMutation(components.${name}.sync.markAssetDeletedPublic, {
           muxAssetId: objectId,
         });
@@ -305,7 +366,7 @@ export const ingestMuxWebhook = internalAction({
     }
 
     if (eventType.startsWith("video.live_stream.")) {
-      if (eventType.endsWith(".deleted")) {
+      if (eventType === "video.live_stream.deleted") {
         await ctx.runMutation(components.${name}.sync.markLiveStreamDeletedPublic, {
           muxLiveStreamId: objectId,
         });
@@ -321,7 +382,7 @@ export const ingestMuxWebhook = internalAction({
     }
 
     if (eventType.startsWith("video.upload.")) {
-      if (eventType.endsWith(".deleted")) {
+      if (eventType === "video.upload.deleted") {
         await ctx.runMutation(components.${name}.sync.markUploadDeletedPublic, {
           muxUploadId: objectId,
         });
