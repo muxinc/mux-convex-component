@@ -139,7 +139,7 @@ const upsertAssetFromPayloadHandler = async (
   });
 
   if (existing) {
-    await ctx.db.patch(existing._id, patchDoc);
+    await ctx.db.patch("assets", existing._id, patchDoc);
     return existing._id;
   }
 
@@ -154,11 +154,13 @@ const upsertAssetFromPayloadHandler = async (
 
 export const upsertAssetFromPayload = internalMutation({
   args: { asset: v.record(v.string(), v.any()) },
+  returns: v.id("assets"),
   handler: upsertAssetFromPayloadHandler,
 });
 
 export const upsertAssetFromPayloadPublic = mutation({
   args: { asset: v.record(v.string(), v.any()) },
+  returns: v.id("assets"),
   handler: upsertAssetFromPayloadHandler,
 });
 
@@ -171,7 +173,7 @@ const markAssetDeletedHandler = async (
     .withIndex("by_mux_asset_id", (q) => q.eq("muxAssetId", args.muxAssetId))
     .unique();
   if (!existing) return null;
-  await ctx.db.patch(existing._id, {
+  await ctx.db.patch("assets", existing._id, {
     status: "deleted",
     deletedAtMs: Date.now(),
     updatedAtMs: Date.now(),
@@ -181,11 +183,13 @@ const markAssetDeletedHandler = async (
 
 export const markAssetDeleted = internalMutation({
   args: { muxAssetId: v.string() },
+  returns: v.union(v.id("assets"), v.null()),
   handler: markAssetDeletedHandler,
 });
 
 export const markAssetDeletedPublic = mutation({
   args: { muxAssetId: v.string() },
+  returns: v.union(v.id("assets"), v.null()),
   handler: markAssetDeletedHandler,
 });
 
@@ -223,7 +227,7 @@ const upsertLiveStreamFromPayloadHandler = async (
   });
 
   if (existing) {
-    await ctx.db.patch(existing._id, patchDoc);
+    await ctx.db.patch("liveStreams", existing._id, patchDoc);
     return existing._id;
   }
 
@@ -238,11 +242,13 @@ const upsertLiveStreamFromPayloadHandler = async (
 
 export const upsertLiveStreamFromPayload = internalMutation({
   args: { liveStream: v.record(v.string(), v.any()) },
+  returns: v.id("liveStreams"),
   handler: upsertLiveStreamFromPayloadHandler,
 });
 
 export const upsertLiveStreamFromPayloadPublic = mutation({
   args: { liveStream: v.record(v.string(), v.any()) },
+  returns: v.id("liveStreams"),
   handler: upsertLiveStreamFromPayloadHandler,
 });
 
@@ -257,7 +263,7 @@ const markLiveStreamDeletedHandler = async (
     )
     .unique();
   if (!existing) return null;
-  await ctx.db.patch(existing._id, {
+  await ctx.db.patch("liveStreams", existing._id, {
     status: "deleted",
     deletedAtMs: Date.now(),
     updatedAtMs: Date.now(),
@@ -267,11 +273,13 @@ const markLiveStreamDeletedHandler = async (
 
 export const markLiveStreamDeleted = internalMutation({
   args: { muxLiveStreamId: v.string() },
+  returns: v.union(v.id("liveStreams"), v.null()),
   handler: markLiveStreamDeletedHandler,
 });
 
 export const markLiveStreamDeletedPublic = mutation({
   args: { muxLiveStreamId: v.string() },
+  returns: v.union(v.id("liveStreams"), v.null()),
   handler: markLiveStreamDeletedHandler,
 });
 
@@ -311,7 +319,7 @@ const upsertUploadFromPayloadHandler = async (
   });
 
   if (existing) {
-    await ctx.db.patch(existing._id, patchDoc);
+    await ctx.db.patch("uploads", existing._id, patchDoc);
     return existing._id;
   }
 
@@ -326,11 +334,13 @@ const upsertUploadFromPayloadHandler = async (
 
 export const upsertUploadFromPayload = internalMutation({
   args: { upload: v.record(v.string(), v.any()) },
+  returns: v.id("uploads"),
   handler: upsertUploadFromPayloadHandler,
 });
 
 export const upsertUploadFromPayloadPublic = mutation({
   args: { upload: v.record(v.string(), v.any()) },
+  returns: v.id("uploads"),
   handler: upsertUploadFromPayloadHandler,
 });
 
@@ -343,7 +353,7 @@ const markUploadDeletedHandler = async (
     .withIndex("by_mux_upload_id", (q) => q.eq("muxUploadId", args.muxUploadId))
     .unique();
   if (!existing) return null;
-  await ctx.db.patch(existing._id, {
+  await ctx.db.patch("uploads", existing._id, {
     status: "deleted",
     deletedAtMs: Date.now(),
     updatedAtMs: Date.now(),
@@ -353,15 +363,22 @@ const markUploadDeletedHandler = async (
 
 export const markUploadDeleted = internalMutation({
   args: { muxUploadId: v.string() },
+  returns: v.union(v.id("uploads"), v.null()),
   handler: markUploadDeletedHandler,
 });
 
 export const markUploadDeletedPublic = mutation({
   args: { muxUploadId: v.string() },
+  returns: v.union(v.id("uploads"), v.null()),
   handler: markUploadDeletedHandler,
 });
 
 function inferObjectTypeFromEventType(eventType: string): string | undefined {
+  // These events carry a child object in `data`, not the asset or live stream.
+  if (eventType.startsWith("video.asset.track.")) return "track";
+  if (eventType.startsWith("video.asset.static_rendition.")) return "static_rendition";
+  if (eventType.startsWith("video.asset.shots.")) return "shots";
+  if (eventType.startsWith("video.live_stream.simulcast_target.")) return "simulcast_target";
   if (eventType.startsWith("video.asset.")) return "asset";
   if (eventType.startsWith("video.live_stream.")) return "live_stream";
   if (eventType.startsWith("video.upload.")) return "upload";
@@ -418,6 +435,7 @@ export const recordWebhookEvent = internalMutation({
     event: v.record(v.string(), v.any()),
     verified: v.boolean(),
   },
+  returns: v.object({ eventDocId: v.id("events"), alreadyProcessed: v.boolean() }),
   handler: recordWebhookEventHandler,
 });
 
@@ -426,5 +444,6 @@ export const recordWebhookEventPublic = mutation({
     event: v.record(v.string(), v.any()),
     verified: v.boolean(),
   },
+  returns: v.object({ eventDocId: v.id("events"), alreadyProcessed: v.boolean() }),
   handler: recordWebhookEventHandler,
 });

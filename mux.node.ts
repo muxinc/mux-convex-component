@@ -97,6 +97,30 @@ function hasApiCredentials(args: {
   return Boolean(args.muxTokenId && args.muxTokenSecret);
 }
 
+// These events carry a track, static rendition, shot list, or simulcast target
+// in `data`, not the parent asset or live stream.
+function isAssetChildEvent(eventType: string): boolean {
+  return (
+    eventType.startsWith("video.asset.track.") ||
+    eventType.startsWith("video.asset.static_rendition.") ||
+    eventType.startsWith("video.asset.shots.")
+  );
+}
+
+function isLiveStreamChildEvent(eventType: string): boolean {
+  return eventType.startsWith("video.live_stream.simulcast_target.");
+}
+
+// Returns undefined when the object was deleted before the event was handled.
+async function retrieveIfExists<T>(retrieve: () => Promise<T>): Promise<T | undefined> {
+  try {
+    return await retrieve();
+  } catch (error) {
+    if (error instanceof Mux.NotFoundError) return undefined;
+    throw error;
+  }
+}
+
 function createMuxClient(args: {
   muxTokenId?: string;
   muxTokenSecret?: string;
@@ -120,7 +144,9 @@ export const createAsset = action({
     const asset = await mux.video.assets.create(
       args.params as unknown as Parameters<typeof mux.video.assets.create>[0]
     );
-    await ctx.runMutation(internal.sync.upsertAssetFromPayload, { asset });
+    await ctx.runMutation(internal.sync.upsertAssetFromPayload, {
+      asset: asset as unknown as JsonObject,
+    });
     return asset;
   },
 });
@@ -136,7 +162,9 @@ export const createDirectUpload = action({
     const upload = await mux.video.uploads.create(
       (args.params ?? {}) as unknown as Parameters<typeof mux.video.uploads.create>[0]
     );
-    await ctx.runMutation(internal.sync.upsertUploadFromPayload, { upload });
+    await ctx.runMutation(internal.sync.upsertUploadFromPayload, {
+      upload: upload as unknown as JsonObject,
+    });
     return upload;
   },
 });
@@ -154,7 +182,9 @@ export const createLiveStream = action({
         typeof mux.video.liveStreams.create
       >[0]
     );
-    await ctx.runMutation(internal.sync.upsertLiveStreamFromPayload, { liveStream });
+    await ctx.runMutation(internal.sync.upsertLiveStreamFromPayload, {
+      liveStream: liveStream as unknown as JsonObject,
+    });
     return liveStream;
   },
 });
@@ -168,7 +198,9 @@ export const syncAssetById = action({
   handler: async (ctx, args) => {
     const mux = createMuxClient(args);
     const asset = await mux.video.assets.retrieve(args.muxAssetId);
-    await ctx.runMutation(internal.sync.upsertAssetFromPayload, { asset });
+    await ctx.runMutation(internal.sync.upsertAssetFromPayload, {
+      asset: asset as unknown as JsonObject,
+    });
     return asset;
   },
 });
@@ -182,7 +214,9 @@ export const syncUploadById = action({
   handler: async (ctx, args) => {
     const mux = createMuxClient(args);
     const upload = await mux.video.uploads.retrieve(args.muxUploadId);
-    await ctx.runMutation(internal.sync.upsertUploadFromPayload, { upload });
+    await ctx.runMutation(internal.sync.upsertUploadFromPayload, {
+      upload: upload as unknown as JsonObject,
+    });
     return upload;
   },
 });
@@ -196,7 +230,9 @@ export const syncLiveStreamById = action({
   handler: async (ctx, args) => {
     const mux = createMuxClient(args);
     const liveStream = await mux.video.liveStreams.retrieve(args.muxLiveStreamId);
-    await ctx.runMutation(internal.sync.upsertLiveStreamFromPayload, { liveStream });
+    await ctx.runMutation(internal.sync.upsertLiveStreamFromPayload, {
+      liveStream: liveStream as unknown as JsonObject,
+    });
     return liveStream;
   },
 });
@@ -300,8 +336,23 @@ export const ingestWebhook = action({
       return { event: eventRecord, skipped: true };
     }
 
+    if (isAssetChildEvent(eventType)) {
+      // Re-sync the parent so its tracks and renditions stay current.
+      const muxAssetId = asString(asRecord(event.data)?.asset_id);
+      if (!muxAssetId || !hasApiCredentials(args)) {
+        return { event: eventRecord, skipped: true };
+      }
+      const mux = createMuxClient(args);
+      const asset = await retrieveIfExists(() => mux.video.assets.retrieve(muxAssetId));
+      if (!asset) return { event: eventRecord, skipped: true };
+      await ctx.runMutation(internal.sync.upsertAssetFromPayload, {
+        asset: asset as unknown as JsonObject,
+      });
+      return { event: eventRecord, skipped: false };
+    }
+
     if (eventType.startsWith("video.asset.")) {
-      if (eventType.endsWith(".deleted")) {
+      if (eventType === "video.asset.deleted") {
         await ctx.runMutation(internal.sync.markAssetDeleted, { muxAssetId: objectId });
         return { event: eventRecord, skipped: false };
       }
@@ -309,8 +360,10 @@ export const ingestWebhook = action({
       if (hasApiCredentials(args)) {
         const mux = createMuxClient(args);
         const asset = await mux.video.assets.retrieve(objectId);
-        await ctx.runMutation(internal.sync.upsertAssetFromPayload, { asset });
         assetPayload = asset as unknown as JsonObject;
+        await ctx.runMutation(internal.sync.upsertAssetFromPayload, {
+          asset: assetPayload,
+        });
       } else {
         assetPayload = asObject(event.data);
         await ctx.runMutation(internal.sync.upsertAssetFromPayload, {
@@ -332,8 +385,24 @@ export const ingestWebhook = action({
       return { event: eventRecord, skipped: false };
     }
 
+    if (isLiveStreamChildEvent(eventType)) {
+      const muxLiveStreamId = asString(asRecord(event.data)?.live_stream_id);
+      if (!muxLiveStreamId || !hasApiCredentials(args)) {
+        return { event: eventRecord, skipped: true };
+      }
+      const mux = createMuxClient(args);
+      const liveStream = await retrieveIfExists(() =>
+        mux.video.liveStreams.retrieve(muxLiveStreamId)
+      );
+      if (!liveStream) return { event: eventRecord, skipped: true };
+      await ctx.runMutation(internal.sync.upsertLiveStreamFromPayload, {
+        liveStream: liveStream as unknown as JsonObject,
+      });
+      return { event: eventRecord, skipped: false };
+    }
+
     if (eventType.startsWith("video.live_stream.")) {
-      if (eventType.endsWith(".deleted")) {
+      if (eventType === "video.live_stream.deleted") {
         await ctx.runMutation(internal.sync.markLiveStreamDeleted, {
           muxLiveStreamId: objectId,
         });
@@ -342,7 +411,9 @@ export const ingestWebhook = action({
       if (hasApiCredentials(args)) {
         const mux = createMuxClient(args);
         const liveStream = await mux.video.liveStreams.retrieve(objectId);
-        await ctx.runMutation(internal.sync.upsertLiveStreamFromPayload, { liveStream });
+        await ctx.runMutation(internal.sync.upsertLiveStreamFromPayload, {
+          liveStream: liveStream as unknown as JsonObject,
+        });
       } else {
         await ctx.runMutation(internal.sync.upsertLiveStreamFromPayload, {
           liveStream: asObject(event.data),
@@ -352,14 +423,16 @@ export const ingestWebhook = action({
     }
 
     if (eventType.startsWith("video.upload.")) {
-      if (eventType.endsWith(".deleted")) {
+      if (eventType === "video.upload.deleted") {
         await ctx.runMutation(internal.sync.markUploadDeleted, { muxUploadId: objectId });
         return { event: eventRecord, skipped: false };
       }
       if (hasApiCredentials(args)) {
         const mux = createMuxClient(args);
         const upload = await mux.video.uploads.retrieve(objectId);
-        await ctx.runMutation(internal.sync.upsertUploadFromPayload, { upload });
+        await ctx.runMutation(internal.sync.upsertUploadFromPayload, {
+          upload: upload as unknown as JsonObject,
+        });
       } else {
         await ctx.runMutation(internal.sync.upsertUploadFromPayload, {
           upload: asObject(event.data),

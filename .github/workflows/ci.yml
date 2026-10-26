@@ -10,7 +10,12 @@ permissions:
 
 jobs:
   check:
+    name: check (${{ matrix.deps }} deps)
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        deps: [locked, minimum]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -18,5 +23,10 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - if: matrix.deps == 'minimum'
+        name: Install the oldest versions allowed by peerDependencies
+        run: |
+          npm install --no-save $(node -p "Object.entries(require('./package.json').peerDependencies).map(([name, range]) => name + '@' + range.replace(/^\^/, '')).join(' ')")
+          npm ls convex @mux/ts || true
       - run: npm run typecheck
       - run: npm test

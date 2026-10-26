@@ -1,0 +1,27 @@
+# Catches upstream drift before users hit it: new Convex releases, and @mux/ts
+# changes such as reworded webhook signature errors (the generated webhook maps
+# those to 401s by message).
+name: Latest dependencies
+
+on:
+  schedule:
+    - cron: "0 14 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm install --no-save convex@latest @mux/ts@latest
+      - run: npm ls convex @mux/ts
+      - run: npm run typecheck
+      - run: npm test

@@ -1,8 +1,10 @@
 import { query } from "./_generated/server";
 import { v } from "convex/values";
+import { assetDoc, eventDoc, liveStreamDoc, uploadDoc } from "./schema";
 
 export const getAssetByMuxId = query({
   args: { muxAssetId: v.string() },
+  returns: v.union(assetDoc, v.null()),
   handler: async (ctx, args) => {
     return await ctx.db
       .query("assets")
@@ -13,6 +15,7 @@ export const getAssetByMuxId = query({
 
 export const getLiveStreamByMuxId = query({
   args: { muxLiveStreamId: v.string() },
+  returns: v.union(liveStreamDoc, v.null()),
   handler: async (ctx, args) => {
     return await ctx.db
       .query("liveStreams")
@@ -25,6 +28,7 @@ export const getLiveStreamByMuxId = query({
 
 export const getUploadByMuxId = query({
   args: { muxUploadId: v.string() },
+  returns: v.union(uploadDoc, v.null()),
   handler: async (ctx, args) => {
     return await ctx.db
       .query("uploads")
@@ -35,6 +39,7 @@ export const getUploadByMuxId = query({
 
 export const listAssets = query({
   args: { limit: v.optional(v.number()) },
+  returns: v.array(assetDoc),
   handler: async (ctx, args) => {
     return await ctx.db
       .query("assets")
@@ -46,6 +51,7 @@ export const listAssets = query({
 
 export const listLiveStreams = query({
   args: { limit: v.optional(v.number()) },
+  returns: v.array(liveStreamDoc),
   handler: async (ctx, args) => {
     return await ctx.db
       .query("liveStreams")
@@ -57,6 +63,7 @@ export const listLiveStreams = query({
 
 export const listUploads = query({
   args: { limit: v.optional(v.number()) },
+  returns: v.array(uploadDoc),
   handler: async (ctx, args) => {
     return await ctx.db
       .query("uploads")
@@ -68,6 +75,7 @@ export const listUploads = query({
 
 export const listRecentEvents = query({
   args: { limit: v.optional(v.number()) },
+  returns: v.array(eventDoc),
   handler: async (ctx, args) => {
     return await ctx.db
       .query("events")
