@@ -53,11 +53,11 @@
     "access": "public"
   },
   "peerDependencies": {
-    "@mux/ts": "^15.0.0",
+    "@mux/ts": "^16.0.0",
     "convex": "^1.31.2"
   },
   "devDependencies": {
-    "@mux/ts": "^15.6.1",
+    "@mux/ts": "^16.0.0",
     "convex": "^1.48.0",
     "typescript": "^5.7.0"
   }
