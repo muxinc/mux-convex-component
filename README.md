@@ -19,7 +19,7 @@ npm i @mux/convex @mux/ts
 npm i -D @mux/convex-mux-init
 ```
 
-`convex` (1.31.2 or later) and `@mux/ts` (15 or later) are peer dependencies, so
+`convex` (1.31.2 or later) and `@mux/ts` (16 or later) are peer dependencies, so
 the component uses your app's copies.
 
 If you prefer not to install the scaffold CLI, you can run it directly with
